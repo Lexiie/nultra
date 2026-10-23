@@ -3,6 +3,17 @@ import { ingestHistoricalKlines } from "@nultra/data-core";
 import { parseMarket } from "@nultra/strike-client";
 
 import type { TradingOpportunity } from "@nultra/shared-types";
+
+interface Diagnostics {
+  insufficientMarketData: boolean;
+  insufficientTrades: number;
+  failedProfitability: number;
+  failedWalkForward: number;
+  failedCostStress: number;
+  failedNeighborStability: number;
+  failedHoldout: number;
+}
+interface Baselines { buyAndHoldNetReturn: string; randomTimingNetReturn: string }
 import type { CostAssumptions } from "@nultra/shared-types";
 import DiscoveryWorker from "./discovery.worker?worker";
 
@@ -28,6 +39,8 @@ export default function App() {
   const [selected, setSelected] = useState<TradingOpportunity | null>(null);
   const [noRobustEdge, setNoRobustEdge] = useState(false);
   const [attempted, setAttempted] = useState(0);
+  const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
+  const [baselines, setBaselines] = useState<Baselines | null>(null);
 
   async function discover() {
     setBusy(true);
@@ -55,8 +68,9 @@ export default function App() {
       setProgress("Starting...");
       const worker = new DiscoveryWorker();
       workerRef.current = worker;
-      const res = await new Promise<{ opportunities: TradingOpportunity[]; noRobustEdge: boolean; attempted: number }>((resolve, reject) => {
+      const res = await new Promise<{ opportunities: TradingOpportunity[]; noRobustEdge: boolean; attempted: number; diagnostics: Diagnostics; baselines: Baselines }>((resolve, reject) => {
         worker.onmessage = (ev: MessageEvent) => {
+          if (ev.data?.progress) { setProgress(ev.data.progress); return; }
           if (ev.data?.ok) resolve(ev.data.result);
           else reject(new Error(ev.data?.error ?? "worker error"));
         };
@@ -76,6 +90,8 @@ export default function App() {
       setOpps(res.opportunities);
       setNoRobustEdge(res.noRobustEdge);
       setAttempted(res.attempted);
+      setDiagnostics(res.diagnostics);
+      setBaselines(res.baselines);
       setProgress("");
       setStatus(`Done. ${res.opportunities.filter((o: TradingOpportunity) => o.verdict === "CANDIDATE — HISTORICAL ONLY").length} qualified of ${res.attempted}.`);
     } catch (e) {
@@ -155,6 +171,22 @@ export default function App() {
           </div>
           {noRobustEdge && <div className="bg-amber-900/40 border border-amber-700 rounded p-3 text-amber-200 text-sm">NO ROBUST EDGE — no candidate passed all gates.</div>}
           {opps.some((o) => o.verdict === "INSUFFICIENT DATA") && <div className="bg-slate-800 border border-slate-700 rounded p-3 text-slate-300 text-sm">Some candidates: INSUFFICIENT DATA.</div>}
+        </section>
+      )}
+
+      {diagnostics && (
+        <section className="mb-6 bg-slate-900 rounded-xl p-4 border border-slate-800">
+          <h2 className="text-lg font-semibold mb-2">Diagnostics</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+            <div>Insufficient market data: {String(diagnostics.insufficientMarketData)}</div>
+            <div>Insufficient trades: {diagnostics.insufficientTrades}</div>
+            <div>Failed profitability: {diagnostics.failedProfitability}</div>
+            <div>Failed walk-forward: {diagnostics.failedWalkForward}</div>
+            <div>Failed cost stress: {diagnostics.failedCostStress}</div>
+            <div>Failed neighbor stability: {diagnostics.failedNeighborStability}</div>
+            <div>Failed holdout: {diagnostics.failedHoldout}</div>
+          </div>
+          {baselines && <p className="text-xs text-slate-400 mt-2">Baseline buy-and-hold: {baselines.buyAndHoldNetReturn} · random: {baselines.randomTimingNetReturn}</p>}
         </section>
       )}
 

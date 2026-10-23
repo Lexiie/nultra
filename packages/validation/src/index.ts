@@ -115,6 +115,7 @@ export interface ValidateInput {
   datasetManifest?: DatasetManifest;
   interval?: string;
   env?: "mainnet" | "testnet";
+  onProgress?: (msg: string) => void;
 }
 
 export interface ValidateOutput {
@@ -122,6 +123,17 @@ export interface ValidateOutput {
   reports: ValidationReport[];
   noRobustEdge: boolean;
   attempted: number;
+  dataStatus: "OK" | "INSUFFICIENT_MARKET_DATA";
+  diagnostics: {
+    insufficientMarketData: boolean;
+    insufficientTrades: number;
+    failedProfitability: number;
+    failedWalkForward: number;
+    failedCostStress: number;
+    failedNeighborStability: number;
+    failedHoldout: number;
+  };
+  baselines: { buyAndHoldNetReturn: string; randomTimingNetReturn: string };
 }
 
 export function validateOpportunities(input: ValidateInput): ValidateOutput {
@@ -162,8 +174,11 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
   const reports: ValidationReport[] = [];
   const opps: TradingOpportunity[] = [];
   const passingIndices: number[] = [];
+  const dataStatus: "OK" | "INSUFFICIENT_MARKET_DATA" = insufficientData ? "INSUFFICIENT_MARKET_DATA" : "OK";
 
-  for (const spec of candidates) {
+  for (let ci = 0; ci < candidates.length; ci++) {
+    const spec = candidates[ci];
+    input.onProgress?.(`Validating candidate ${ci + 1}/${candidates.length}...`);
     const strategy = buildStrategy(spec);
     const trainRes = runBacktest(train, spec, costs, market, 0);
     const valRes = runBacktest(validation, spec, costs, market, validationStart);
@@ -308,6 +323,21 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
     if (validationPass) passingIndices.push(opps.length - 1);
   }
 
+
+  const diagnostics = {
+    insufficientMarketData: dataStatus === "INSUFFICIENT_MARKET_DATA",
+    insufficientTrades: reports.filter((r) => r.gateResults.some((g) => g.gate === "min_trades" && !g.pass)).length,
+    failedProfitability: reports.filter((r) => r.gateResults.some((g) => g.gate === "validation_profit" && !g.pass)).length,
+    failedWalkForward: reports.filter((r) => r.gateResults.some((g) => g.gate === "walk_forward" && !g.pass)).length,
+    failedCostStress: reports.filter((r) => r.gateResults.some((g) => g.gate === "cost_stress_2x" && !g.pass)).length,
+    failedNeighborStability: reports.filter((r) => r.gateResults.some((g) => g.gate === "neighbor_stability" && !g.pass)).length,
+    failedHoldout: reports.filter((r) => r.gateResults.some((g) => g.gate === "holdout" && !g.pass)).length,
+  };
+  const baselines = {
+    buyAndHoldNetReturn: reports.length ? reports[0].benchmarks.buyAndHoldNetReturn : "0",
+    randomTimingNetReturn: reports.length ? reports[0].benchmarks.randomTimingNetReturn : "0",
+  };
+
   // Sealed holdout: evaluate only the selected candidate once.
   let selectedIndex = -1;
   if (passingIndices.length > 0) {
@@ -373,5 +403,5 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
 
   const noRobustEdge = !opps.some((o) => o.verdict === "CANDIDATE — HISTORICAL ONLY");
 
-  return { opportunities: opps, reports, noRobustEdge, attempted: candidates.length };
+  return { opportunities: opps, reports, noRobustEdge, attempted: candidates.length, dataStatus, diagnostics, baselines };
 }

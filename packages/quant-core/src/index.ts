@@ -70,6 +70,21 @@ export function avgAbsDiffAt(values: number[], endIndex: number, n: number): num
   return sum / count;
 }
 
+export function trueRange(high: number, low: number, prevClose: number | null): number {
+  if (prevClose === null) return high - low;
+  return Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
+}
+
+export function atrAt(highs: number[], lows: number[], closes: number[], endIndex: number, n: number): number | null {
+  if (n <= 0 || endIndex < n + 1) return null;
+  let sum = 0;
+  for (let j = endIndex - n; j < endIndex; j++) {
+    const prevClose = j > 0 ? closes[j - 1] : null;
+    sum += trueRange(highs[j], lows[j], prevClose);
+  }
+  return sum / n;
+}
+
 export function maxOf(values: number[], n: number): number | null {
   if (n <= 0 || values.length < n) return null;
   let m = -Infinity;
@@ -217,18 +232,17 @@ export function runBacktest(
     // volatility breakout
     const lb = Number(p.lookback);
     const atrMult = Number(p.atrMult);
-    const volWindow = Number(p.volWindow);
-    if (i - 1 < Math.max(lb, volWindow)) return currentPos;
+    const atrWindow = Number(p.volWindow);
+    if (i - 1 < Math.max(lb, atrWindow)) return currentPos;
     const lastClose = closes[i - 1];
     const maxHigh = maxLast(highs, i - 1, lb);
     const minLow = minLast(lows, i - 1, lb);
-    const vol = stdDevAt(closes, i, volWindow);
-    const volOk = vol !== null && vol > 0;
+    const atr = atrAt(highs, lows, closes, i, atrWindow);
+    const atrOk = atr !== null && atr > 0;
     if (currentPos === 0) {
-      // atrMult scales the breakout threshold: higher values require a larger move
-      const threshold = maxHigh !== null && vol !== null ? maxHigh + (atrMult - 1) * vol : null;
+      const threshold = maxHigh !== null && atr !== null ? maxHigh + atrMult * atr : null;
       const breakout = threshold !== null && lastClose > threshold;
-      return breakout && volOk ? 1 : 0;
+      return breakout && atrOk ? 1 : 0;
     }
     // exit on breakdown below minLow
     const breakdown = minLow !== null && lastClose < minLow;

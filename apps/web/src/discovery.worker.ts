@@ -11,6 +11,7 @@ self.onmessage = async (e: MessageEvent) => {
       datasetManifest,
       interval,
       env,
+      onProgress: (msg: string) => self.postMessage({ ok: true, progress: msg }),
     });
     self.postMessage({ ok: true, result: res });
   } catch (err) {

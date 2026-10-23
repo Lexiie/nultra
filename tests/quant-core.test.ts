@@ -89,7 +89,7 @@ describe("quant core", () => {
   });
 
   it("atrMult affects volatility breakout results", () => {
-    const prices = Array.from({ length: 80 }, (_, i) => 100 + Math.sin(i / 4) * 6 + i * 0.3);
+    const prices = Array.from({ length: 120 }, (_, i) => 100 + i * 1.5 + Math.sin(i / 2) * 8);
     const candles = makeCandles(prices);
     const results = [1.0, 1.5, 2.0].map((m) =>
       runBacktest(candles, { family: "volatility_breakout" as const, params: { lookback: 5, atrMult: m, volWindow: 10 }, gridVersion: "t" }, costs, market)
