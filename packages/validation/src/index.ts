@@ -126,6 +126,7 @@ export interface ValidateOutput {
 
 export function validateOpportunities(input: ValidateInput): ValidateOutput {
   const { candles, market, costs, seed } = input;
+  if (!market) throw new Error("market config required for validation");
   const candidates = input.candidates ?? enumerateCandidates();
   const interval = input.interval ?? "1h";
   const env = input.env ?? "mainnet";
@@ -162,22 +163,13 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
     const strategy = buildStrategy(spec);
     const trainRes = runBacktest(train, spec, costs, market);
     const valRes = runBacktest(validation, spec, costs, market);
-    const holdoutRes = runBacktest(holdout, spec, costs, market);
     const stressRes = runBacktest(validation, spec, stressCosts, market);
 
     const foldReturns: number[] = [];
     let foldsPositive = 0;
     let foldExpectancySum = 0;
     for (const f of folds) {
-      // walk-forward optimization: select best candidate on train fold
-      let bestSpec = spec;
-      let bestTrainExp = -Infinity;
-      for (const c of candidates) {
-        const tr = runBacktest(f.train, c, costs, market);
-        const e = Number(tr.expectancy);
-        if (e > bestTrainExp) { bestTrainExp = e; bestSpec = c; }
-      }
-      const fr = runBacktest(f.validation, bestSpec, costs, market);
+      const fr = runBacktest(f.validation, spec, costs, market);
       const er = Number(fr.expectancy);
       foldReturns.push(er);
       foldExpectancySum += er;
@@ -195,7 +187,7 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
     const neighborPct = neighbors.length > 0 ? (posNeighbors / neighbors.length) * 100 : 0;
 
     const preHoldoutOosTrades = valRes.completedTrades;
-    const holdoutTrades = holdoutRes.completedTrades;
+    const holdoutTrades = 0;
 
     const gateResults: Array<{ gate: string; value: string; threshold: string; pass: boolean; reason: string }> = [];
     const addGate = (gate: string, value: string, threshold: string, pass: boolean, reason: string) => {
@@ -207,7 +199,7 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
     } else {
       addGate("data_integrity", "ok", "ok", true, "dataset validated");
     }
-    const tradeGate = preHoldoutOosTrades >= P0_DEFAULTS.minPreHoldoutOosTrades && holdoutTrades >= P0_DEFAULTS.minHoldoutTrades;
+    const tradeGate = preHoldoutOosTrades >= P0_DEFAULTS.minPreHoldoutOosTrades;
     addGate("min_trades", `${preHoldoutOosTrades}/${holdoutTrades}`, `${P0_DEFAULTS.minPreHoldoutOosTrades}/${P0_DEFAULTS.minHoldoutTrades}`, tradeGate, tradeGate ? "ok" : "trade count below floor");
 
     const valProfitGate = Number(valRes.expectancy) > 0 && Number(valRes.netReturn) > 0;
@@ -221,9 +213,6 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
 
     const neighborGate = neighborPct >= P0_DEFAULTS.minNeighborStabilityPct;
     addGate("neighbor_stability", `${neighborPct.toFixed(1)}%`, `>=${P0_DEFAULTS.minNeighborStabilityPct}%`, neighborGate, neighborGate ? "ok" : "unstable neighbors");
-
-    const holdoutGate = Number(holdoutRes.expectancy) > 0 && Number(holdoutRes.netReturn) > 0;
-    addGate("holdout", `${holdoutRes.expectancy}/${holdoutRes.netReturn}`, ">0", holdoutGate, holdoutGate ? "ok" : "holdout not profitable");
 
     const validationPass = !insufficientData && tradeGate && valProfitGate && wfGate && stressGate && neighborGate;
     const allPass = validationPass;
@@ -290,7 +279,7 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
       executionAssumptions: costs,
       trainMetrics: trainRes,
       validationMetrics: valRes,
-      holdoutMetrics: holdoutRes,
+      holdoutMetrics: undefined,
       riskMetrics: {
         maxDrawdown: valRes.maxDrawdown,
         tradeCount: valRes.tradeCount,
@@ -344,6 +333,7 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
     reports[selectedIndex].verdict = opps[selectedIndex].verdict as ValidationReport["verdict"];
     reports[selectedIndex].rejectionReasons = opps[selectedIndex].rejectionReasons;
     reports[selectedIndex].holdoutTrades = holdoutTrades;
+    reports[selectedIndex].gateResults.push({ gate: "holdout", value: `${holdoutRes.expectancy}/${holdoutRes.netReturn}`, threshold: ">0", pass: holdoutGate, reason: holdoutGate ? "ok" : "holdout not profitable" });
 
   }
   // non-selected validation-passing candidates: not evaluated on holdout

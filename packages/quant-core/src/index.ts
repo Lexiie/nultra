@@ -98,11 +98,14 @@ function describeRules(spec: CandidateSpec): string {
 }
 
 // ---------- Market constraints ----------
-function qtyStep(market?: MarketConfig): number {
-  return market ? Number(market.quantityStep) : 1;
+function qtyStep(market: MarketConfig): number {
+  const v = Number(market.quantityStep);
+  if (!Number.isFinite(v) || v <= 0) throw new Error("invalid market quantityStep");
+  return v;
 }
-function minNotional(market?: MarketConfig): number {
-  return market ? Number(market.minNotional) : 0;
+function minNotional(market: MarketConfig): number {
+  const v = Number(market.minNotional);
+  return Number.isFinite(v) ? v : 0;
 }
 function roundDownQty(qty: number, step: number): number {
   if (!Number.isFinite(step) || step <= 0) return qty;
@@ -114,7 +117,7 @@ export function runBacktest(
   candles: Candle[],
   spec: CandidateSpec,
   costs: CostAssumptions,
-  market?: MarketConfig,
+  market: MarketConfig,
 ): BacktestResult {
   const strategy = buildStrategy(spec);
   const closes = candles.map((c) => Number(c.close));
@@ -294,7 +297,7 @@ export function runBacktest(
 // ---------- Opportunity discovery (M2: simple 80/20 split) ----------
 export function discoverOpportunities(
   candles: Candle[],
-  market: MarketConfig | undefined,
+  market: MarketConfig,
   costs: CostAssumptions,
   seed: number,
 ): TradingOpportunity[] {

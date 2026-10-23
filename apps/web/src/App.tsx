@@ -43,14 +43,11 @@ export default function App() {
         endMs: end,
       });
       setStatus(`Ingested ${ingested.candles.length} candles (${ingested.pages} pages, ${ingested.gapCount} gaps). Loading market config...`);
-      let market;
-      try {
-        const mres = await fetch(`${env === "mainnet" ? "https://api.strikefinance.org" : "https://api-v2-testnet.strikefinance.org"}/v2/markets`);
-        const mjson = await mres.json() as { markets: Record<string, unknown> };
-        market = parseMarket(mjson.markets[symbol]);
-      } catch {
-        market = undefined;
-      }
+      const mres = await fetch(`${env === "mainnet" ? "https://api.strikefinance.org" : "https://api-v2-testnet.strikefinance.org"}/v2/markets`);
+      if (!mres.ok) throw new Error(`market metadata HTTP ${mres.status}`);
+      const mjson = await mres.json() as { markets: Record<string, unknown> };
+      if (!mjson.markets || !mjson.markets[symbol]) throw new Error(`no market metadata for ${symbol}`);
+      const market = parseMarket(mjson.markets[symbol]);
       setStatus(`Ingested ${ingested.candles.length} candles. Running validation...`);
       const res = validateOpportunities({
         candles: ingested.candles,

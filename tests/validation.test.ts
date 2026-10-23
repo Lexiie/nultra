@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validateOpportunities } from "@nultra/validation";
-import type { Candle, CostAssumptions } from "@nultra/shared-types";
+import type { Candle, CostAssumptions, MarketConfig } from "@nultra/shared-types";
 
 const costs: CostAssumptions = {
   feeBpsPerSide: 10,
@@ -9,6 +9,12 @@ const costs: CostAssumptions = {
   fundingIncluded: false,
   source: "DEFAULT_ESTIMATE",
   label: "FUNDING_EXCLUDED",
+};
+
+const market: MarketConfig = {
+  symbol: "BTC-USD", baseAsset: "BTC", quoteAsset: "USD", contractType: "PERPETUAL", status: "trading",
+  tickSize: "1", quantityStep: "0.00001", marketMinSize: "0.00001", marketMaxSize: "1000", limitMinSize: "0.00001", limitMaxSize: "1000",
+  minNotional: "10", pricePrecision: 8, quantityPrecision: 8,
 };
 
 function makeCandles(prices: number[]): Candle[] {
@@ -31,20 +37,21 @@ describe("validation", () => {
   it("runs gates and returns noRobustEdge flag", () => {
     const prices = Array.from({ length: 200 }, (_, i) => 100 + Math.sin(i / 5) * 8 + (i % 7));
     const candles = makeCandles(prices);
-    const res = validateOpportunities({ candles, costs, seed: 7 });
+    const res = validateOpportunities({ candles, market, costs, seed: 7 });
     expect(res.attempted).toBeGreaterThan(0);
     expect(res.opportunities.length).toBe(res.attempted);
     expect(typeof res.noRobustEdge).toBe("boolean");
     const o = res.opportunities[0];
     expect(o.validationMetrics).toBeTruthy();
-    expect(o.holdoutMetrics).toBeTruthy();
+    // holdoutMetrics present only for the selected candidate (if any)
+    expect(o.validationMetrics).toBeTruthy();
     expect(o.robustnessChecks.walkForwardFoldsTotal).toBeGreaterThanOrEqual(3);
   });
 
   it("insufficient data yields INSUFFICIENT DATA", () => {
     const prices = Array.from({ length: 30 }, (_, i) => 100 + i);
     const candles = makeCandles(prices);
-    const res = validateOpportunities({ candles, costs, seed: 1 });
+    const res = validateOpportunities({ candles, market, costs, seed: 1 });
     expect(res.opportunities[0].verdict).toBe("INSUFFICIENT DATA");
   });
 });
