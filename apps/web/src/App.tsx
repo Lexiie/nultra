@@ -35,6 +35,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
   const workerRef = React.useRef<Worker | null>(null);
+  const rejectRef = React.useRef<((e: Error) => void) | null>(null);
   const [opps, setOpps] = useState<TradingOpportunity[]>([]);
   const [selected, setSelected] = useState<TradingOpportunity | null>(null);
   const [noRobustEdge, setNoRobustEdge] = useState(false);
@@ -69,6 +70,7 @@ export default function App() {
       const worker = new DiscoveryWorker();
       workerRef.current = worker;
       const res = await new Promise<{ opportunities: TradingOpportunity[]; noRobustEdge: boolean; attempted: number; diagnostics: Diagnostics; baselines: Baselines }>((resolve, reject) => {
+        rejectRef.current = reject;
         worker.onmessage = (ev: MessageEvent) => {
           if (ev.data?.progress) { setProgress(ev.data.progress); return; }
           if (ev.data?.ok) resolve(ev.data.result);
@@ -98,6 +100,7 @@ export default function App() {
       setStatus(`Error: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       if (workerRef.current) { workerRef.current.terminate(); workerRef.current = null; }
+      rejectRef.current = null;
       setBusy(false);
       setProgress("");
     }
@@ -146,7 +149,7 @@ export default function App() {
               {busy ? "Running..." : "Discover Opportunities"}
             </button>
             {busy && (
-              <button onClick={() => { if (workerRef.current) { workerRef.current.terminate(); workerRef.current = null; } setBusy(false); setProgress(""); setStatus("Cancelled."); }} className="w-full mt-2 bg-rose-700 hover:bg-rose-600 rounded p-2 font-medium">
+              <button onClick={() => { if (workerRef.current) { workerRef.current.terminate(); workerRef.current = null; } if (rejectRef.current) { rejectRef.current(new Error("cancelled")); rejectRef.current = null; } setBusy(false); setProgress(""); setStatus("Cancelled."); }} className="w-full mt-2 bg-rose-700 hover:bg-rose-600 rounded p-2 font-medium">
                 Cancel
               </button>
             )}

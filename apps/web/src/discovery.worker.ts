@@ -3,7 +3,7 @@ import { validateOpportunities } from "@nultra/validation";
 self.onmessage = async (e: MessageEvent) => {
   const { candles, market, costs, seed, interval, env, datasetManifest } = e.data;
   try {
-    const res = validateOpportunities({
+    const res = await validateOpportunities({
       candles,
       market,
       costs,

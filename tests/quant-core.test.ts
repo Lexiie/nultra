@@ -115,4 +115,28 @@ describe("quant core", () => {
     expect(Number(t.cashAfter)).toBeGreaterThanOrEqual(0);
   });
 
+
+  it("golden backtest accounting invariants", () => {
+    const prices = [100, 101, 102, 103, 104, 95, 94];
+    const candles = makeCandles(prices);
+    const res = runBacktest(candles, { family: "momentum" as const, params: { lookback: 2, threshold: 0.01, trendWindow: 2 }, gridVersion: "t" }, costs, market);
+    expect(res.tradeCount).toBeGreaterThan(0);
+    const t = res.trades[0];
+    const entryFill = Number(t.entryPrice);
+    const exitFill = Number(t.exitPrice);
+    const qty = Number(t.quantity);
+    const entryFee = Number(t.entryFee);
+    const exitFee = Number(t.exitFee);
+    expect(entryFee).toBeCloseTo(Math.abs(qty * entryFill) * costs.feeBpsPerSide / 10000, 6);
+    expect(exitFee).toBeCloseTo(Math.abs(qty * exitFill) * costs.feeBpsPerSide / 10000, 6);
+    const gross = qty * (exitFill - entryFill);
+    const net = gross - entryFee - exitFee;
+    expect(Number(t.realizedGrossPnl)).toBeCloseTo(gross, 6);
+    expect(Number(t.realizedNetPnl)).toBeCloseTo(net, 6);
+    // cash after single completed trade equals initial + net
+    expect(Number(t.cashAfter)).toBeCloseTo(10000 + net, 6);
+    // signal bar before fill bar
+    expect(t.signalBarOpenTimeMs).toBeLessThan(t.fillBarOpenTimeMs);
+  });
+
 });

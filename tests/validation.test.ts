@@ -34,10 +34,10 @@ function makeCandles(prices: number[]): Candle[] {
 }
 
 describe("validation", () => {
-  it("runs gates and returns noRobustEdge flag", () => {
+  it("runs gates and returns noRobustEdge flag", async () => {
     const prices = Array.from({ length: 200 }, (_, i) => 100 + Math.sin(i / 5) * 8 + (i % 7));
     const candles = makeCandles(prices);
-    const res = validateOpportunities({ candles, market, costs, seed: 7 });
+    const res = await validateOpportunities({ candles, market, costs, seed: 7 });
     expect(res.attempted).toBeGreaterThan(0);
     expect(res.opportunities.length).toBe(res.attempted);
     expect(typeof res.noRobustEdge).toBe("boolean");
@@ -48,10 +48,10 @@ describe("validation", () => {
     expect(o.robustnessChecks.walkForwardFoldsTotal).toBeGreaterThanOrEqual(3);
   });
 
-  it("insufficient data yields INSUFFICIENT DATA", () => {
+  it("insufficient data yields INSUFFICIENT DATA", async () => {
     const prices = Array.from({ length: 30 }, (_, i) => 100 + i);
     const candles = makeCandles(prices);
-    const res = validateOpportunities({ candles, market, costs, seed: 1 });
+    const res = await validateOpportunities({ candles, market, costs, seed: 1 });
     expect(res.opportunities[0].verdict).toBe("INSUFFICIENT DATA");
   });
 });

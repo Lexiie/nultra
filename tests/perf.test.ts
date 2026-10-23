@@ -37,13 +37,23 @@ function makeCandles(n: number): Candle[] {
 }
 
 describe("performance", () => {
-  it("processes 2160 candles within 30s", { timeout: 30000 }, () => {
+  it("processes 2160 candles within 30s", { timeout: 30000 }, async () => {
     const candles = makeCandles(2160);
     const t0 = Date.now();
-    const res = validateOpportunities({ candles, market, costs, seed: 7 });
+    const res = await validateOpportunities({ candles, market, costs, seed: 7 });
     const dt = Date.now() - t0;
     console.log(`2160 candles: ${dt}ms, attempted=${res.attempted}`);
     expect(res.attempted).toBeGreaterThan(0);
     expect(dt).toBeLessThan(30000);
+  });
+
+  it("processes 8640 candles within 120s", { timeout: 120000 }, async () => {
+    const candles = makeCandles(8640);
+    const t0 = Date.now();
+    const res = await validateOpportunities({ candles, market, costs, seed: 7 });
+    const dt = Date.now() - t0;
+    console.log(`8640 candles: ${dt}ms, attempted=${res.attempted}`);
+    expect(res.attempted).toBeGreaterThan(0);
+    expect(dt).toBeLessThan(120000);
   });
 });

@@ -136,7 +136,7 @@ export interface ValidateOutput {
   baselines: { buyAndHoldNetReturn: string; randomTimingNetReturn: string };
 }
 
-export function validateOpportunities(input: ValidateInput): ValidateOutput {
+export async function validateOpportunities(input: ValidateInput): Promise<ValidateOutput> {
   const { candles, market, costs, seed } = input;
   if (!market) throw new Error("market config required for validation");
   const candidates = input.candidates ?? enumerateCandidates();
@@ -179,6 +179,8 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
   for (let ci = 0; ci < candidates.length; ci++) {
     const spec = candidates[ci];
     input.onProgress?.(`Validating candidate ${ci + 1}/${candidates.length}...`);
+    // yield to event loop so progress messages can be delivered
+    await new Promise((resolve) => setTimeout(resolve, 0));
     const strategy = buildStrategy(spec);
     const trainRes = runBacktest(train, spec, costs, market, 0);
     const valRes = runBacktest(validation, spec, costs, market, validationStart);
@@ -238,10 +240,12 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
 
     let verdict: ValidationReport["verdict"];
     const rejectionReasons: string[] = [];
-    if (insufficientData || !tradeGate) {
+    if (insufficientData) {
       verdict = "INSUFFICIENT DATA";
-      if (insufficientData) rejectionReasons.push("insufficient data");
-      if (!tradeGate) rejectionReasons.push("trade count below floor");
+      rejectionReasons.push("insufficient market data");
+    } else if (!tradeGate) {
+      verdict = "INSUFFICIENT DATA";
+      rejectionReasons.push("insufficient trades");
     } else if (allPass) {
       verdict = "CANDIDATE — HISTORICAL ONLY";
     } else {
@@ -324,19 +328,6 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
   }
 
 
-  const diagnostics = {
-    insufficientMarketData: dataStatus === "INSUFFICIENT_MARKET_DATA",
-    insufficientTrades: reports.filter((r) => r.gateResults.some((g) => g.gate === "min_trades" && !g.pass)).length,
-    failedProfitability: reports.filter((r) => r.gateResults.some((g) => g.gate === "validation_profit" && !g.pass)).length,
-    failedWalkForward: reports.filter((r) => r.gateResults.some((g) => g.gate === "walk_forward" && !g.pass)).length,
-    failedCostStress: reports.filter((r) => r.gateResults.some((g) => g.gate === "cost_stress_2x" && !g.pass)).length,
-    failedNeighborStability: reports.filter((r) => r.gateResults.some((g) => g.gate === "neighbor_stability" && !g.pass)).length,
-    failedHoldout: reports.filter((r) => r.gateResults.some((g) => g.gate === "holdout" && !g.pass)).length,
-  };
-  const baselines = {
-    buyAndHoldNetReturn: reports.length ? reports[0].benchmarks.buyAndHoldNetReturn : "0",
-    randomTimingNetReturn: reports.length ? reports[0].benchmarks.randomTimingNetReturn : "0",
-  };
 
   // Sealed holdout: evaluate only the selected candidate once.
   let selectedIndex = -1;
@@ -400,6 +391,20 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
     if (hb !== ha) return hb - ha;
     return a.opportunityId.localeCompare(b.opportunityId);
   });
+
+  const diagnostics = {
+    insufficientMarketData: dataStatus === "INSUFFICIENT_MARKET_DATA",
+    insufficientTrades: reports.filter((r) => r.gateResults.some((g) => g.gate === "min_trades" && !g.pass)).length,
+    failedProfitability: reports.filter((r) => r.gateResults.some((g) => g.gate === "validation_profit" && !g.pass)).length,
+    failedWalkForward: reports.filter((r) => r.gateResults.some((g) => g.gate === "walk_forward" && !g.pass)).length,
+    failedCostStress: reports.filter((r) => r.gateResults.some((g) => g.gate === "cost_stress_2x" && !g.pass)).length,
+    failedNeighborStability: reports.filter((r) => r.gateResults.some((g) => g.gate === "neighbor_stability" && !g.pass)).length,
+    failedHoldout: reports.filter((r) => r.gateResults.some((g) => g.gate === "holdout" && !g.pass)).length,
+  };
+  const baselines = {
+    buyAndHoldNetReturn: reports.length ? reports[0].benchmarks.buyAndHoldNetReturn : "0",
+    randomTimingNetReturn: reports.length ? reports[0].benchmarks.randomTimingNetReturn : "0",
+  };
 
   const noRobustEdge = !opps.some((o) => o.verdict === "CANDIDATE — HISTORICAL ONLY");
 
