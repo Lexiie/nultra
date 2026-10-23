@@ -135,21 +135,25 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
   const n = candles.length;
   const trainEnd = Math.floor(n * 0.6);
   const valEnd = Math.floor(n * 0.8);
+  const warmup = Math.min(60, trainEnd);
   const train = candles.slice(0, trainEnd);
-  const validation = candles.slice(trainEnd, valEnd);
-  const holdout = candles.slice(valEnd);
+  const validation = candles.slice(trainEnd - warmup, valEnd);
+  const validationStart = warmup;
+  const holdout = candles.slice(Math.max(0, valEnd - warmup), n);
+  const holdoutStart = Math.min(warmup, valEnd);
 
   const stressCosts = makeCosts2x(costs);
 
   // walk-forward folds within pre-holdout
   const pre = candles.slice(0, valEnd);
   const seg = Math.floor(pre.length / 4);
-  const folds: Array<{ train: Candle[]; validation: Candle[] }> = [];
+  const folds: Array<{ train: Candle[]; validation: Candle[]; startIndex: number }> = [];
   if (seg > 0) {
     for (let k = 0; k < 3; k++) {
       const tr = pre.slice(0, (k + 1) * seg);
-      const va = pre.slice((k + 1) * seg, (k + 2) * seg);
-      if (tr.length > 0 && va.length > 0) folds.push({ train: tr, validation: va });
+      const wa = Math.min(60, tr.length);
+      const va = pre.slice((k + 1) * seg - wa, (k + 2) * seg);
+      if (tr.length > 0 && va.length > 0) folds.push({ train: tr, validation: va, startIndex: wa });
     }
   }
 
@@ -161,15 +165,15 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
 
   for (const spec of candidates) {
     const strategy = buildStrategy(spec);
-    const trainRes = runBacktest(train, spec, costs, market);
-    const valRes = runBacktest(validation, spec, costs, market);
-    const stressRes = runBacktest(validation, spec, stressCosts, market);
+    const trainRes = runBacktest(train, spec, costs, market, 0);
+    const valRes = runBacktest(validation, spec, costs, market, validationStart);
+    const stressRes = runBacktest(validation, spec, stressCosts, market, validationStart);
 
     const foldReturns: number[] = [];
     let foldsPositive = 0;
     let foldExpectancySum = 0;
     for (const f of folds) {
-      const fr = runBacktest(f.validation, spec, costs, market);
+      const fr = runBacktest(f.validation, spec, costs, market, f.startIndex);
       const er = Number(fr.expectancy);
       foldReturns.push(er);
       foldExpectancySum += er;
@@ -181,7 +185,7 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
     const neighbors = oneStepNeighbors(spec);
     let posNeighbors = 0;
     for (const nb of neighbors) {
-      const nbRes = runBacktest(validation, nb, costs, market);
+      const nbRes = runBacktest(validation, nb, costs, market, validationStart);
       if (Number(nbRes.expectancy) > 0) posNeighbors++;
     }
     const neighborPct = neighbors.length > 0 ? (posNeighbors / neighbors.length) * 100 : 0;
@@ -232,8 +236,8 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
 
     const report: ValidationReport = {
       trainRange: { startMs: train[0]?.openTimeMs ?? 0, endMs: train[train.length - 1]?.openTimeMs ?? 0 },
-      validationRange: { startMs: validation[0]?.openTimeMs ?? 0, endMs: validation[validation.length - 1]?.openTimeMs ?? 0 },
-      holdoutRange: { startMs: holdout[0]?.openTimeMs ?? 0, endMs: holdout[holdout.length - 1]?.openTimeMs ?? 0 },
+      validationRange: { startMs: candles[trainEnd]?.openTimeMs ?? 0, endMs: candles[valEnd - 1]?.openTimeMs ?? 0 },
+      holdoutRange: { startMs: candles[valEnd]?.openTimeMs ?? 0, endMs: candles[n - 1]?.openTimeMs ?? 0 },
       folds: folds.length,
       foldNetReturns: foldReturns.map((x) => x.toFixed(8)),
       preHoldoutOosTrades,
@@ -319,7 +323,7 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
   }
   if (selectedIndex >= 0) {
     const selSpec = candidates[selectedIndex];
-    const holdoutRes = runBacktest(holdout, selSpec, costs, market);
+    const holdoutRes = runBacktest(holdout, selSpec, costs, market, holdoutStart);
     opps[selectedIndex].holdoutMetrics = holdoutRes;
     const holdoutTrades = holdoutRes.completedTrades;
     const holdoutGate = holdoutTrades >= P0_DEFAULTS.minHoldoutTrades && Number(holdoutRes.expectancy) > 0 && Number(holdoutRes.netReturn) > 0;

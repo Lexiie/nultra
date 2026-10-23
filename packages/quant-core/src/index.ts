@@ -161,6 +161,7 @@ export function runBacktest(
   spec: CandidateSpec,
   costs: CostAssumptions,
   market: MarketConfig,
+  startIndex?: number,
 ): BacktestResult {
   const strategy = buildStrategy(spec);
   const closes = candles.map((c) => Number(c.close));
@@ -237,7 +238,8 @@ export function runBacktest(
   for (let i = 0; i < candles.length; i++) {
     const openPrice = opens[i];
     // process exits/entries at open of bar i based on decision from previous bars
-    const target = desiredPosition(position, i);
+    const si = startIndex ?? 0;
+    const target = i < si ? position : desiredPosition(position, i);
     if (position === 0 && target === 1) {
       // enter long
       const equityBefore = cash; // no open position

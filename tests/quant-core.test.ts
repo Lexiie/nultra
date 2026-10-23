@@ -101,4 +101,18 @@ describe("quant core", () => {
     expect(distinct).toBeGreaterThan(1);
   });
 
+
+  it("backtest trade timing and PnL signs", () => {
+    const prices = [100, 101, 102, 103, 104, 90, 89];
+    const candles = makeCandles(prices);
+    const res = runBacktest(candles, { family: "momentum" as const, params: { lookback: 2, threshold: 0.01, trendWindow: 2 }, gridVersion: "t" }, costs, market);
+    expect(res.tradeCount).toBeGreaterThan(0);
+    const t = res.trades[0];
+    expect(t.signalBarOpenTimeMs).toBeLessThan(t.fillBarOpenTimeMs);
+    expect(Number(t.realizedGrossPnl)).toBeDefined();
+    expect(Number(t.entryFee)).toBeGreaterThan(0);
+    expect(Number(t.exitFee)).toBeGreaterThan(0);
+    expect(Number(t.cashAfter)).toBeGreaterThanOrEqual(0);
+  });
+
 });
