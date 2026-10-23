@@ -38,6 +38,7 @@ export default function App() {
   const rejectRef = React.useRef<((e: Error) => void) | null>(null);
   const abortRef = React.useRef<AbortController | null>(null);
   const runIdRef = React.useRef(0);
+  const runRef = React.useRef<{ runId: number; worker: Worker | null; controller: AbortController } | null>(null);
   const [opps, setOpps] = useState<TradingOpportunity[]>([]);
   const [selected, setSelected] = useState<TradingOpportunity | null>(null);
   const [noRobustEdge, setNoRobustEdge] = useState(false);
@@ -49,6 +50,9 @@ export default function App() {
     const runId = ++runIdRef.current;
     const controller = new AbortController();
     abortRef.current = controller;
+    const worker = new DiscoveryWorker();
+    runRef.current = { runId, worker, controller };
+    workerRef.current = worker;
     setBusy(true);
     setOpps([]);
     setSelected(null);
@@ -74,17 +78,16 @@ export default function App() {
       if (runId !== runIdRef.current) return;
       setStatus(`Ingested ${ingested.candles.length} candles. Running validation in worker...`);
       setProgress("Starting...");
-      const worker = new DiscoveryWorker();
-      workerRef.current = worker;
       const res = await new Promise<{ opportunities: TradingOpportunity[]; noRobustEdge: boolean; attempted: number; diagnostics: Diagnostics; baselines: Baselines }>((resolve, reject) => {
         rejectRef.current = reject;
         if (runId !== runIdRef.current) { reject(new Error("cancelled")); return; }
         worker.onmessage = (ev: MessageEvent) => {
+          if (runId !== runIdRef.current) return;
           if (ev.data?.progress) { setProgress(ev.data.progress); return; }
           if (ev.data?.ok) resolve(ev.data.result);
           else reject(new Error(ev.data?.error ?? "worker error"));
         };
-        worker.onerror = (err: ErrorEvent) => reject(new Error(err.message));
+        worker.onerror = (err: ErrorEvent) => { if (runId === runIdRef.current) reject(new Error(err.message)); };
         worker.postMessage({
           candles: ingested.candles,
           market,
@@ -95,8 +98,10 @@ export default function App() {
           env,
         });
       });
+      if (runId !== runIdRef.current) return;
       worker.terminate();
       workerRef.current = null;
+      runRef.current = null;
       setOpps(res.opportunities);
       setNoRobustEdge(res.noRobustEdge);
       setAttempted(res.attempted);
@@ -105,17 +110,22 @@ export default function App() {
       setProgress("");
       setStatus(`Done. ${res.opportunities.filter((o: TradingOpportunity) => o.verdict === "CANDIDATE — HISTORICAL ONLY").length} qualified of ${res.attempted}.`);
     } catch (e) {
+      if (runId !== runIdRef.current) return;
       if (controller.signal.aborted || (e instanceof Error && e.message === "cancelled")) {
         setStatus("Cancelled.");
       } else {
         setStatus(`Error: ${e instanceof Error ? e.message : String(e)}`);
       }
     } finally {
-      if (workerRef.current) { workerRef.current.terminate(); workerRef.current = null; }
-      rejectRef.current = null;
-      if (abortRef.current === controller) abortRef.current = null;
-      setBusy(false);
-      setProgress("");
+      if (runRef.current?.runId === runId) {
+        if (runRef.current.worker) runRef.current.worker.terminate();
+        runRef.current = null;
+        workerRef.current = null;
+        rejectRef.current = null;
+        if (abortRef.current === controller) abortRef.current = null;
+        setBusy(false);
+        setProgress("");
+      }
     }
   }
 
@@ -162,7 +172,7 @@ export default function App() {
               {busy ? "Running..." : "Discover Opportunities"}
             </button>
             {busy && (
-              <button onClick={() => { if (abortRef.current) abortRef.current.abort(); if (workerRef.current) { workerRef.current.terminate(); workerRef.current = null; } if (rejectRef.current) { rejectRef.current(new Error("cancelled")); rejectRef.current = null; } setBusy(false); setProgress(""); setStatus("Cancelled."); }} className="w-full mt-2 bg-rose-700 hover:bg-rose-600 rounded p-2 font-medium">
+              <button onClick={() => { const r = runRef.current; if (r) { r.controller.abort(); if (r.worker) r.worker.terminate(); } if (rejectRef.current) { rejectRef.current(new Error("cancelled")); rejectRef.current = null; } runRef.current = null; workerRef.current = null; setBusy(false); setProgress(""); setStatus("Cancelled."); }} className="w-full mt-2 bg-rose-700 hover:bg-rose-600 rounded p-2 font-medium">
                 Cancel
               </button>
             )}
