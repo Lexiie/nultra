@@ -244,7 +244,7 @@ export async function validateOpportunities(input: ValidateInput): Promise<Valid
       verdict = "INSUFFICIENT DATA";
       rejectionReasons.push("insufficient market data");
     } else if (!tradeGate) {
-      verdict = "INSUFFICIENT DATA";
+      verdict = "INSUFFICIENT TRADES";
       rejectionReasons.push("insufficient trades");
     } else if (allPass) {
       verdict = "CANDIDATE — HISTORICAL ONLY";

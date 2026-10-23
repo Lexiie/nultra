@@ -139,4 +139,22 @@ describe("quant core", () => {
     expect(t.signalBarOpenTimeMs).toBeLessThan(t.fillBarOpenTimeMs);
   });
 
+
+  it("golden independent accounting", () => {
+    const prices = [100, 101, 102, 103, 104, 95, 94];
+    const candles = makeCandles(prices);
+    const res = runBacktest(candles, { family: "momentum" as const, params: { lookback: 2, threshold: 0.01, trendWindow: 2 }, gridVersion: "t" }, costs, market);
+    expect(res.tradeCount).toBeGreaterThan(0);
+    const t = res.trades[0];
+    // independently compute expected fills from candle opens
+    const execBps = costs.halfSpreadBpsPerSide + costs.slippageBpsPerSide;
+    const signalIdx = candles.findIndex((c) => c.openTimeMs === t.signalBarOpenTimeMs);
+    const entryIdx = signalIdx + 1;
+    const entryOpen = Number(candles[entryIdx].open);
+    const expectedEntryFill = entryOpen * (1 + execBps / 10000);
+    expect(Number(t.entryPrice)).toBeCloseTo(expectedEntryFill, 6);
+    const entryFee = Math.abs(Number(t.quantity) * expectedEntryFill) * costs.feeBpsPerSide / 10000;
+    expect(Number(t.entryFee)).toBeCloseTo(entryFee, 6);
+  });
+
 });

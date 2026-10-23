@@ -165,22 +165,22 @@ export function parseFeeTiers(payload: unknown): FeeTiersResponse {
   return p;
 }
 
-export async function fetchJson(env: EnvName, path: string, params?: Record<string, string | number>, base: "rest" | "market" = "market"): Promise<unknown> {
+export async function fetchJson(env: EnvName, path: string, params?: Record<string, string | number>, base: "rest" | "market" = "market", signal?: AbortSignal): Promise<unknown> {
   const baseStr = BASE_URLS[env][base];
   const url = new URL(baseStr + (path.startsWith("/") ? path : "/" + path));
   if (params) for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
-  const res = await fetch(url.toString(), { headers: { Accept: "application/json" } });
+  const res = await fetch(url.toString(), { headers: { Accept: "application/json" }, signal });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   return res.json();
 }
 
 // Convenience: fetch klines
-export async function fetchKlines(env: EnvName, symbol: string, interval: string, opts: { limit?: number; startTime?: number; endTime?: number; priceType?: "last" | "mark" | "index" } = {}): Promise<KlineBar[]> {
+export async function fetchKlines(env: EnvName, symbol: string, interval: string, opts: { limit?: number; startTime?: number; endTime?: number; priceType?: "last" | "mark" | "index"; signal?: AbortSignal } = {}): Promise<KlineBar[]> {
   const params: Record<string, string | number> = { symbol, interval, limit: Math.min(opts.limit ?? 500, 1500) };
   if (opts.startTime !== undefined) params.startTime = opts.startTime;
   if (opts.endTime !== undefined) params.endTime = opts.endTime;
   if (opts.priceType) params.priceType = opts.priceType;
   // market base = .../price, path /v2/klines => .../price/v2/klines
-  const payload = await fetchJson(env, "/v2/klines", params, "market");
+  const payload = await fetchJson(env, "/v2/klines", params, "market", opts.signal);
   return parseKlines(payload);
 }

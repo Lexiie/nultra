@@ -137,6 +137,7 @@ export async function ingestHistoricalKlines(input: {
   startMs: number;
   endMs: number;
   priceType?: "last" | "mark" | "index";
+  signal?: AbortSignal;
 }): Promise<IngestResult> {
   if (input.startMs >= input.endMs) throw new Error("startMs must be < endMs");
   const allRows: unknown[] = [];
@@ -150,6 +151,7 @@ export async function ingestHistoricalKlines(input: {
       limit: 1500,
       endTime: cursor,
       priceType: input.priceType ?? "last",
+      signal: input.signal,
     });
     if (!bars || bars.length === 0) break;
     // advancement check: first bar openTime must be <= cursor

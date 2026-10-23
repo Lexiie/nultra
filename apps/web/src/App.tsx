@@ -36,6 +36,8 @@ export default function App() {
   const [progress, setProgress] = useState("");
   const workerRef = React.useRef<Worker | null>(null);
   const rejectRef = React.useRef<((e: Error) => void) | null>(null);
+  const abortRef = React.useRef<AbortController | null>(null);
+  const runIdRef = React.useRef(0);
   const [opps, setOpps] = useState<TradingOpportunity[]>([]);
   const [selected, setSelected] = useState<TradingOpportunity | null>(null);
   const [noRobustEdge, setNoRobustEdge] = useState(false);
@@ -44,6 +46,9 @@ export default function App() {
   const [baselines, setBaselines] = useState<Baselines | null>(null);
 
   async function discover() {
+    const runId = ++runIdRef.current;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setBusy(true);
     setOpps([]);
     setSelected(null);
@@ -58,6 +63,7 @@ export default function App() {
         interval,
         startMs: start,
         endMs: end,
+        signal: controller.signal,
       });
       setStatus(`Ingested ${ingested.candles.length} candles (${ingested.pages} pages, ${ingested.gapCount} gaps). Loading market config...`);
       const mres = await fetch(`${env === "mainnet" ? "https://api.strikefinance.org" : "https://api-v2-testnet.strikefinance.org"}/v2/markets`);
@@ -65,12 +71,14 @@ export default function App() {
       const mjson = await mres.json() as { markets: Record<string, unknown> };
       if (!mjson.markets || !mjson.markets[symbol]) throw new Error(`no market metadata for ${symbol}`);
       const market = parseMarket(mjson.markets[symbol]);
+      if (runId !== runIdRef.current) return;
       setStatus(`Ingested ${ingested.candles.length} candles. Running validation in worker...`);
       setProgress("Starting...");
       const worker = new DiscoveryWorker();
       workerRef.current = worker;
       const res = await new Promise<{ opportunities: TradingOpportunity[]; noRobustEdge: boolean; attempted: number; diagnostics: Diagnostics; baselines: Baselines }>((resolve, reject) => {
         rejectRef.current = reject;
+        if (runId !== runIdRef.current) { reject(new Error("cancelled")); return; }
         worker.onmessage = (ev: MessageEvent) => {
           if (ev.data?.progress) { setProgress(ev.data.progress); return; }
           if (ev.data?.ok) resolve(ev.data.result);
@@ -97,10 +105,15 @@ export default function App() {
       setProgress("");
       setStatus(`Done. ${res.opportunities.filter((o: TradingOpportunity) => o.verdict === "CANDIDATE — HISTORICAL ONLY").length} qualified of ${res.attempted}.`);
     } catch (e) {
-      setStatus(`Error: ${e instanceof Error ? e.message : String(e)}`);
+      if (controller.signal.aborted || (e instanceof Error && e.message === "cancelled")) {
+        setStatus("Cancelled.");
+      } else {
+        setStatus(`Error: ${e instanceof Error ? e.message : String(e)}`);
+      }
     } finally {
       if (workerRef.current) { workerRef.current.terminate(); workerRef.current = null; }
       rejectRef.current = null;
+      if (abortRef.current === controller) abortRef.current = null;
       setBusy(false);
       setProgress("");
     }
@@ -149,7 +162,7 @@ export default function App() {
               {busy ? "Running..." : "Discover Opportunities"}
             </button>
             {busy && (
-              <button onClick={() => { if (workerRef.current) { workerRef.current.terminate(); workerRef.current = null; } if (rejectRef.current) { rejectRef.current(new Error("cancelled")); rejectRef.current = null; } setBusy(false); setProgress(""); setStatus("Cancelled."); }} className="w-full mt-2 bg-rose-700 hover:bg-rose-600 rounded p-2 font-medium">
+              <button onClick={() => { if (abortRef.current) abortRef.current.abort(); if (workerRef.current) { workerRef.current.terminate(); workerRef.current = null; } if (rejectRef.current) { rejectRef.current(new Error("cancelled")); rejectRef.current = null; } setBusy(false); setProgress(""); setStatus("Cancelled."); }} className="w-full mt-2 bg-rose-700 hover:bg-rose-600 rounded p-2 font-medium">
                 Cancel
               </button>
             )}
@@ -203,7 +216,7 @@ export default function App() {
                   className={`w-full text-left bg-slate-900 rounded p-3 border ${selected?.opportunityId === o.opportunityId ? "border-indigo-500" : "border-slate-800"} hover:border-slate-600`}>
                   <div className="flex justify-between items-center">
                     <span className="font-medium text-sm">{o.hypothesisFamily}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded ${o.verdict === "CANDIDATE — HISTORICAL ONLY" ? "bg-emerald-900 text-emerald-200" : o.verdict === "REJECTED" ? "bg-rose-900 text-rose-200" : "bg-slate-700 text-slate-200"}`}>{o.verdict}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded ${o.verdict === "CANDIDATE — HISTORICAL ONLY" ? "bg-emerald-900 text-emerald-200" : o.verdict === "REJECTED" ? "bg-rose-900 text-rose-200" : o.verdict === "INSUFFICIENT TRADES" ? "bg-amber-900 text-amber-200" : "bg-slate-700 text-slate-200"}`}>{o.verdict}</span>
                   </div>
                   <div className="text-xs text-slate-400 mt-1">val expectancy: {o.validationMetrics.expectancy} · maxDD: {o.validationMetrics.maxDrawdown} · trades: {o.validationMetrics.completedTrades}</div>
                 </button>

@@ -137,11 +137,11 @@ export interface ValidationReport {
   neighborStabilityPct: number;
   benchmarks: { buyAndHoldNetReturn: string; randomTimingNetReturn: string };
   gateResults: Array<{ gate: string; value: string; threshold: string; pass: boolean; reason: string }>;
-  verdict: "CANDIDATE — HISTORICAL ONLY" | "REJECTED" | "INSUFFICIENT DATA";
+  verdict: "CANDIDATE — HISTORICAL ONLY" | "REJECTED" | "INSUFFICIENT DATA" | "INSUFFICIENT TRADES";
   rejectionReasons: string[];
 }
 
-export type Verdict = ValidationReport["verdict"];
+export type Verdict = ValidationReport["verdict"] | "INSUFFICIENT TRADES";
 
 export interface TradingOpportunity {
   opportunityId: string;
