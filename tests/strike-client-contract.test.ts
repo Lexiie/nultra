@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseExchangeInfo, parseFeeTiers, parseMarket, parseKlines } from "@nultra/strike-client";
 
-const base = "/tmp/opencode/extracted/evidence-mainnet/strike-mainnet";
+const base = resolve(__dirname, "../nultra-mvp-prd/evidence/strike-mainnet");
 
 describe("Strike client contract", () => {
   it("parses markets BTC-USD", () => {

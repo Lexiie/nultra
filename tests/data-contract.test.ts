@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { canonicalizeKlines, validateAll, buildDatasetManifest } from "@nultra/data-core";
 import { parseKlines } from "@nultra/strike-client";
@@ -6,7 +7,7 @@ import { parseKlines } from "@nultra/strike-client";
 describe("Strike kline contract", () => {
   it("parses real mainnet 1h fixture", async () => {
     // fallback: read from extracted evidence dir
-    const p = "/tmp/opencode/extracted/evidence-mainnet/strike-mainnet/klines_1h.json";
+    const p = resolve(__dirname, "../nultra-mvp-prd/evidence/strike-mainnet/klines_1h.json");
     const raw = JSON.parse(readFileSync(p, "utf-8")) as unknown[];
     const bars = parseKlines(raw);
     expect(bars.length).toBe(100);

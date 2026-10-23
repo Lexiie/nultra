@@ -8,5 +8,6 @@ dist
 
 apps/web/*.js
 apps/web/*.d.ts
+nultra-mvp-prd/evidence/strike-*/
 
 .agents/

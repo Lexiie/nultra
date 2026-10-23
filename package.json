@@ -13,7 +13,8 @@
     "typecheck": "pnpm -r run typecheck",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "extract:evidence": "mkdir -p nultra-mvp-prd/evidence && unzip -o nultra-mvp-prd/evidence/strike-mainnet.zip -d nultra-mvp-prd/evidence"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
