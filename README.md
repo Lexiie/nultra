@@ -8,7 +8,7 @@ Instead of presenting every profitable backtest as an opportunity, Nultra is des
 
 **[Launch Live Demo](https://nultra.pages.dev)**
 
-<!-- TODO: add dashboard screenshot (docs/screenshot.png) -->
+![Nultra dashboard](docs/screenshot.png)
 
 > Historical research only. No live trading, investment recommendations, or guaranteed returns.
 
@@ -104,6 +104,22 @@ Nultra exposes information that helps users inspect and reproduce experiments, i
 - JSON experiment export
 
 The interface also provides diagnostic summaries showing why candidates fail validation.
+
+## Example Research Run
+
+A recent run on **BTC-USD, 1h, 14 days** produced the following result:
+
+| Metric | Value |
+|---|---:|
+| Candidates generated | 54 |
+| Qualified (`CANDIDATE — HISTORICAL ONLY`) | 0 |
+| Rejected | 0 |
+| Insufficient trades | 54 |
+| No robust edge | Yes |
+
+This is an expected and valid outcome: the evaluated period did not produce enough completed trades for the candidates to pass the minimum trade requirement.
+
+Full experiment output is available in [`docs/example-run.json`](docs/example-run.json).
 
 ## Architecture
 
