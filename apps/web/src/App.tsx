@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ingestHistoricalKlines } from "@nultra/data-core";
+import { parseMarket } from "@nultra/strike-client";
 import { validateOpportunities } from "@nultra/validation";
 import type { TradingOpportunity } from "@nultra/shared-types";
 import type { CostAssumptions } from "@nultra/shared-types";
@@ -41,11 +42,24 @@ export default function App() {
         startMs: start,
         endMs: end,
       });
-      setStatus(`Ingested ${ingested.candles.length} candles (${ingested.pages} pages, ${ingested.gapCount} gaps). Running validation...`);
+      setStatus(`Ingested ${ingested.candles.length} candles (${ingested.pages} pages, ${ingested.gapCount} gaps). Loading market config...`);
+      let market;
+      try {
+        const mres = await fetch(`${env === "mainnet" ? "https://api.strikefinance.org" : "https://api-v2-testnet.strikefinance.org"}/v2/markets`);
+        const mjson = await mres.json() as { markets: Record<string, unknown> };
+        market = parseMarket(mjson.markets[symbol]);
+      } catch {
+        market = undefined;
+      }
+      setStatus(`Ingested ${ingested.candles.length} candles. Running validation...`);
       const res = validateOpportunities({
         candles: ingested.candles,
+        market,
         costs: defaultCosts,
         seed: 42,
+        datasetManifest: ingested.manifest,
+        interval,
+        env,
       });
       setOpps(res.opportunities);
       setNoRobustEdge(res.noRobustEdge);

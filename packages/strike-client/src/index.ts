@@ -169,7 +169,7 @@ export async function fetchJson(env: EnvName, path: string, params?: Record<stri
   const baseStr = BASE_URLS[env][base];
   const url = new URL(baseStr + (path.startsWith("/") ? path : "/" + path));
   if (params) for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
-  const res = await fetch(url.toString(), { headers: { "User-Agent": "Nultra/0.1 (research)", Accept: "application/json" } });
+  const res = await fetch(url.toString(), { headers: { Accept: "application/json" } });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   return res.json();
 }

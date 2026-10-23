@@ -141,6 +141,7 @@ export async function ingestHistoricalKlines(input: {
   if (input.startMs >= input.endMs) throw new Error("startMs must be < endMs");
   const allRows: unknown[] = [];
   const seenPageFirst = new Set<number>();
+  const rawPageHashes: string[] = [];
   let cursor = input.endMs;
   let pages = 0;
   const maxPages = 1000;
@@ -155,6 +156,7 @@ export async function ingestHistoricalKlines(input: {
     const firstOpen = bars[0].openTime;
     if (seenPageFirst.has(firstOpen)) throw new Error("pagination did not advance (possible ignored endTime)");
     seenPageFirst.add(firstOpen);
+    rawPageHashes.push(await sha256Json(bars));
     allRows.push(...bars.map((b: KlineBar) => [
       b.openTime, b.open, b.high, b.low, b.close, b.volume, b.closeTime, b.quoteVolume, b.trades, b.takerBuyBase, b.takerBuyQuote, "0",
     ]));
@@ -176,7 +178,7 @@ export async function ingestHistoricalKlines(input: {
     interval: input.interval,
     priceType: input.priceType ?? "last",
     candles: trimmed,
-    rawPageHashes: [],
+    rawPageHashes: rawPageHashes,
     gaps: canon.gaps,
     gapCount: canon.gapCount,
     downloadedAt: new Date().toISOString(),

@@ -4,6 +4,7 @@ import type {
   MarketConfig,
   TradingOpportunity,
   ValidationReport,
+  DatasetManifest,
 } from "@nultra/shared-types";
 import { P0_DEFAULTS } from "@nultra/shared-types";
 import { runBacktest, enumerateCandidates, buildStrategy, type CandidateSpec } from "@nultra/quant-core";
@@ -66,7 +67,7 @@ function buyAndHoldReturn(candles: Candle[]): number {
   return first !== 0 ? (last - first) / first : 0;
 }
 
-function randomBaselineReturn(candles: Candle[], costs: CostAssumptions, seed: number): number {
+function randomBaselineReturn(candles: Candle[], costs: CostAssumptions, market: MarketConfig | undefined, seed: number): number {
   const rng = mulberry32(seed);
   const initial = P0_DEFAULTS.initialEquity;
   let cash = initial;
@@ -74,7 +75,8 @@ function randomBaselineReturn(candles: Candle[], costs: CostAssumptions, seed: n
   let quantity = 0;
   const execBps = costs.halfSpreadBpsPerSide + costs.slippageBpsPerSide;
   const feeBps = costs.feeBpsPerSide;
-  const step = 1;
+  const step = market ? Number(market.quantityStep) : 1;
+  const minNot = market ? Number(market.minNotional) : 0;
   for (let i = 0; i < candles.length; i++) {
     const openPrice = Number(candles[i].open);
     const target = rng() > 0.5 ? 1 : 0;
@@ -82,7 +84,7 @@ function randomBaselineReturn(candles: Candle[], costs: CostAssumptions, seed: n
       const alloc = cash * P0_DEFAULTS.sizingFraction;
       const buyFill = openPrice * (1 + execBps / 10000);
       const qty = Math.floor(alloc / buyFill / step) * step;
-      if (qty > 0) {
+      if (qty > 0 && qty * buyFill >= minNot) {
         const notional = qty * buyFill;
         const fee = (notional * feeBps) / 10000;
         cash -= notional + fee;
@@ -110,6 +112,9 @@ export interface ValidateInput {
   costs: CostAssumptions;
   candidates?: CandidateSpec[];
   seed: number;
+  datasetManifest?: DatasetManifest;
+  interval?: string;
+  env?: "mainnet" | "testnet";
 }
 
 export interface ValidateOutput {
@@ -122,6 +127,9 @@ export interface ValidateOutput {
 export function validateOpportunities(input: ValidateInput): ValidateOutput {
   const { candles, market, costs, seed } = input;
   const candidates = input.candidates ?? enumerateCandidates();
+  const interval = input.interval ?? "1h";
+  const env = input.env ?? "mainnet";
+  const datasetManifest = input.datasetManifest;
 
   const n = candles.length;
   const trainEnd = Math.floor(n * 0.6);
@@ -148,6 +156,7 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
 
   const reports: ValidationReport[] = [];
   const opps: TradingOpportunity[] = [];
+  const passingIndices: number[] = [];
 
   for (const spec of candidates) {
     const strategy = buildStrategy(spec);
@@ -160,7 +169,15 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
     let foldsPositive = 0;
     let foldExpectancySum = 0;
     for (const f of folds) {
-      const fr = runBacktest(f.validation, spec, costs, market);
+      // walk-forward optimization: select best candidate on train fold
+      let bestSpec = spec;
+      let bestTrainExp = -Infinity;
+      for (const c of candidates) {
+        const tr = runBacktest(f.train, c, costs, market);
+        const e = Number(tr.expectancy);
+        if (e > bestTrainExp) { bestTrainExp = e; bestSpec = c; }
+      }
+      const fr = runBacktest(f.validation, bestSpec, costs, market);
       const er = Number(fr.expectancy);
       foldReturns.push(er);
       foldExpectancySum += er;
@@ -208,7 +225,8 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
     const holdoutGate = Number(holdoutRes.expectancy) > 0 && Number(holdoutRes.netReturn) > 0;
     addGate("holdout", `${holdoutRes.expectancy}/${holdoutRes.netReturn}`, ">0", holdoutGate, holdoutGate ? "ok" : "holdout not profitable");
 
-    const allPass = !insufficientData && tradeGate && valProfitGate && wfGate && stressGate && neighborGate && holdoutGate;
+    const validationPass = !insufficientData && tradeGate && valProfitGate && wfGate && stressGate && neighborGate;
+    const allPass = validationPass;
 
     let verdict: ValidationReport["verdict"];
     const rejectionReasons: string[] = [];
@@ -235,7 +253,7 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
       neighborStabilityPct: neighborPct,
       benchmarks: {
         buyAndHoldNetReturn: buyAndHoldReturn(validation).toFixed(8),
-        randomTimingNetReturn: randomBaselineReturn(validation, costs, seed).toFixed(8),
+        randomTimingNetReturn: randomBaselineReturn(validation, costs, market, seed).toFixed(8),
       },
       gateResults,
       verdict,
@@ -249,11 +267,11 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
       hypothesisExplanation: `Hypothesis family ${spec.family} with params ${JSON.stringify(spec.params)}.`,
       strategyRules: strategy.rulesText,
       parameterSet: spec.params,
-      datasetManifest: {
+      datasetManifest: datasetManifest ?? {
         source: "strike",
-        env: "mainnet",
+        env: env as "mainnet" | "testnet",
         symbol: market?.symbol ?? "UNKNOWN",
-        interval: "1h",
+        interval: interval,
         priceType: "last",
         startMs: candles[0]?.openTimeMs ?? 0,
         endMs: candles[candles.length - 1]?.openTimeMs ?? 0,
@@ -267,7 +285,7 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
         gaps: [],
         barCount: candles.length,
         dataKind: "ohlcv",
-        provenance: "M3 validation",
+        provenance: "M3 validation (no manifest provided)",
       },
       executionAssumptions: costs,
       trainMetrics: trainRes,
@@ -288,12 +306,54 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
       rejectionReasons,
       experimentId: `exp-${seed}`,
       createdAt: new Date().toISOString(),
-      engineVersion: "0.3.0-m3",
+      engineVersion: "0.3.1-m3",
       randomSeed: seed,
     };
 
     reports.push(report);
     opps.push(opp);
+    if (validationPass) passingIndices.push(opps.length - 1);
+  }
+
+  // Sealed holdout: evaluate only the selected candidate once.
+  let selectedIndex = -1;
+  if (passingIndices.length > 0) {
+    selectedIndex = passingIndices.reduce((best, idx) => {
+      if (best === -1) return idx;
+      const a = opps[idx], b = opps[best];
+      const va = Number(a.validationMetrics.expectancy), vb = Number(b.validationMetrics.expectancy);
+      if (va !== vb) return va > vb ? idx : best;
+      const da = Number(a.validationMetrics.maxDrawdown), db = Number(b.validationMetrics.maxDrawdown);
+      if (da !== db) return da < db ? idx : best;
+      return a.opportunityId < b.opportunityId ? idx : best;
+    }, -1);
+  }
+  if (selectedIndex >= 0) {
+    const selSpec = candidates[selectedIndex];
+    const holdoutRes = runBacktest(holdout, selSpec, costs, market);
+    opps[selectedIndex].holdoutMetrics = holdoutRes;
+    const holdoutTrades = holdoutRes.completedTrades;
+    const holdoutGate = holdoutTrades >= P0_DEFAULTS.minHoldoutTrades && Number(holdoutRes.expectancy) > 0 && Number(holdoutRes.netReturn) > 0;
+    if (holdoutGate) {
+      opps[selectedIndex].verdict = "CANDIDATE — HISTORICAL ONLY";
+      opps[selectedIndex].rejectionReasons = [];
+    } else {
+      opps[selectedIndex].verdict = "REJECTED";
+      opps[selectedIndex].rejectionReasons = [holdoutTrades < P0_DEFAULTS.minHoldoutTrades ? "holdout: trade count below floor" : "holdout: not profitable"];
+    }
+    reports[selectedIndex].verdict = opps[selectedIndex].verdict as ValidationReport["verdict"];
+    reports[selectedIndex].rejectionReasons = opps[selectedIndex].rejectionReasons;
+    reports[selectedIndex].holdoutTrades = holdoutTrades;
+
+  }
+  // non-selected validation-passing candidates: not evaluated on holdout
+  for (const idx of passingIndices) {
+    if (idx === selectedIndex) continue;
+    opps[idx].verdict = "REJECTED";
+    opps[idx].rejectionReasons = ["not selected for sealed holdout evaluation"];
+    opps[idx].holdoutMetrics = undefined;
+    reports[idx].verdict = "REJECTED";
+    reports[idx].rejectionReasons = opps[idx].rejectionReasons;
   }
 
   // ranking: eligible first, then validation expectancy desc, drawdown asc, cost stress desc, holdout trades desc, id asc
@@ -307,9 +367,13 @@ export function validateOpportunities(input: ValidateInput): ValidateOutput {
     const da = Number(a.validationMetrics.maxDrawdown);
     const db = Number(b.validationMetrics.maxDrawdown);
     if (da !== db) return da - db;
-    const sa = Number(a.riskMetrics.completedTrades);
-    const sb = Number(b.riskMetrics.completedTrades);
-    if (sb !== sa) return sb - sa;
+    // cost stress tie-breaker (recompute pass as 0/1; expectancy not stored, use robustness flag)
+    const csa = a.robustnessChecks.costStress2xPass ? 1 : 0;
+    const csb = b.robustnessChecks.costStress2xPass ? 1 : 0;
+    if (csb !== csa) return csb - csa;
+    const ha = a.holdoutMetrics ? Number(a.holdoutMetrics.completedTrades) : 0;
+    const hb = b.holdoutMetrics ? Number(b.holdoutMetrics.completedTrades) : 0;
+    if (hb !== ha) return hb - ha;
     return a.opportunityId.localeCompare(b.opportunityId);
   });
 

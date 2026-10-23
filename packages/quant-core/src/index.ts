@@ -132,6 +132,7 @@ export function runBacktest(
   let entryPrice = 0;
   let quantity = 0;
   let entryIndex = -1;
+  let entrySignalIndex = -1;
   const trades: Trade[] = [];
   const equityCurve: Array<{ timeMs: number; equity: string }> = [];
 
@@ -171,8 +172,8 @@ export function runBacktest(
     const volWindow = Number(p.volWindow);
     if (i - 1 < Math.max(lb, volWindow)) return currentPos;
     const lastClose = closes[i - 1];
-    const maxHigh = maxOf(highs.slice(0, i), lb);
-    const minLow = minOf(lows.slice(0, i), lb);
+    const maxHigh = maxOf(highs.slice(0, i - 1), lb);
+    const minLow = minOf(lows.slice(0, i - 1), lb);
     const vol = stdDev(closes.slice(0, i), volWindow);
     const avgVol = sma(closes.slice(0, i).map((_, idx, arr) => idx > 0 ? Math.abs(arr[idx] - arr[idx - 1]) : 0), volWindow);
     const volOk = vol !== null && avgVol !== null && vol > 0; // basic filter
@@ -204,6 +205,7 @@ export function runBacktest(
         entryPrice = buyFill;
         quantity = qty;
         entryIndex = i;
+        entrySignalIndex = i > 0 ? i - 1 : 0;
       }
     } else if (position === 1 && target === 0) {
       // exit long
@@ -219,7 +221,7 @@ export function runBacktest(
       trades.push({
         tradeId: `${strategy.strategyId}-${trades.length}`,
         opportunityId: "",
-        signalBarOpenTimeMs: candles[entryIndex].openTimeMs,
+        signalBarOpenTimeMs: candles[entrySignalIndex >= 0 ? entrySignalIndex : entryIndex].openTimeMs,
         fillBarOpenTimeMs: candles[i].openTimeMs,
         direction: "long",
         entryPrice: entryPrice.toFixed(8),

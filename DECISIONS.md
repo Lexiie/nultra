@@ -10,7 +10,7 @@
 - WebSocket unverified; P0 uses REST only.
 - Web Crypto (crypto.subtle) used for manifest hashing to support browser build; Node 22 supports global crypto.
 - Lint uses typescript-eslint; emitted vite config files ignored.
-- Deployment to Cloudflare not executed (no credentials in this environment); run `pnpm --filter @nultra/web build` then `wrangler pages deploy apps/web/dist`.
+- Deployment executed: Cloudflare Pages live at https://nultra.pages.dev (latest https://c896053a.nultra.pages.dev).
 
 ## Outstanding evidence
 - Upstream Strike skill lock SHA: 30ba679eb40538925a2cc0e2a71615812132f773.
