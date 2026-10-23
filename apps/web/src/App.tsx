@@ -1,9 +1,10 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { ingestHistoricalKlines } from "@nultra/data-core";
 import { parseMarket } from "@nultra/strike-client";
-import { validateOpportunities } from "@nultra/validation";
+
 import type { TradingOpportunity } from "@nultra/shared-types";
 import type { CostAssumptions } from "@nultra/shared-types";
+import DiscoveryWorker from "./discovery.worker?worker";
 
 const defaultCosts: CostAssumptions = {
   feeBpsPerSide: 10,
@@ -21,6 +22,8 @@ export default function App() {
   const [days, setDays] = useState(14);
   const [status, setStatus] = useState<string>("");
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState("");
+  const workerRef = React.useRef<Worker | null>(null);
   const [opps, setOpps] = useState<TradingOpportunity[]>([]);
   const [selected, setSelected] = useState<TradingOpportunity | null>(null);
   const [noRobustEdge, setNoRobustEdge] = useState(false);
@@ -48,24 +51,39 @@ export default function App() {
       const mjson = await mres.json() as { markets: Record<string, unknown> };
       if (!mjson.markets || !mjson.markets[symbol]) throw new Error(`no market metadata for ${symbol}`);
       const market = parseMarket(mjson.markets[symbol]);
-      setStatus(`Ingested ${ingested.candles.length} candles. Running validation...`);
-      const res = validateOpportunities({
-        candles: ingested.candles,
-        market,
-        costs: defaultCosts,
-        seed: 42,
-        datasetManifest: ingested.manifest,
-        interval,
-        env,
+      setStatus(`Ingested ${ingested.candles.length} candles. Running validation in worker...`);
+      setProgress("Starting...");
+      const worker = new DiscoveryWorker();
+      workerRef.current = worker;
+      const res = await new Promise<{ opportunities: TradingOpportunity[]; noRobustEdge: boolean; attempted: number }>((resolve, reject) => {
+        worker.onmessage = (ev: MessageEvent) => {
+          if (ev.data?.ok) resolve(ev.data.result);
+          else reject(new Error(ev.data?.error ?? "worker error"));
+        };
+        worker.onerror = (err: ErrorEvent) => reject(new Error(err.message));
+        worker.postMessage({
+          candles: ingested.candles,
+          market,
+          costs: defaultCosts,
+          seed: 42,
+          datasetManifest: ingested.manifest,
+          interval,
+          env,
+        });
       });
+      worker.terminate();
+      workerRef.current = null;
       setOpps(res.opportunities);
       setNoRobustEdge(res.noRobustEdge);
       setAttempted(res.attempted);
-      setStatus(`Done. ${res.opportunities.filter((o) => o.verdict === "CANDIDATE — HISTORICAL ONLY").length} qualified of ${res.attempted}.`);
+      setProgress("");
+      setStatus(`Done. ${res.opportunities.filter((o: TradingOpportunity) => o.verdict === "CANDIDATE — HISTORICAL ONLY").length} qualified of ${res.attempted}.`);
     } catch (e) {
       setStatus(`Error: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
+      if (workerRef.current) { workerRef.current.terminate(); workerRef.current = null; }
       setBusy(false);
+      setProgress("");
     }
   }
 
@@ -111,10 +129,16 @@ export default function App() {
             <button onClick={discover} disabled={busy} className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded p-2 font-medium">
               {busy ? "Running..." : "Discover Opportunities"}
             </button>
+            {busy && (
+              <button onClick={() => { if (workerRef.current) { workerRef.current.terminate(); workerRef.current = null; } setBusy(false); setProgress(""); setStatus("Cancelled."); }} className="w-full mt-2 bg-rose-700 hover:bg-rose-600 rounded p-2 font-medium">
+                Cancel
+              </button>
+            )}
           </div>
         </div>
         <p className="text-xs text-slate-500 mt-3">Costs: 10 bps fee + 5 bps half-spread + 5 bps slippage per side (estimated, unverified). Funding EXCLUDED for perpetuals.</p>
         {status && <p className="text-sm mt-3 text-slate-300">{status}</p>}
+        {progress && <p className="text-xs mt-1 text-slate-500">{progress}</p>}
       </section>
 
       {opps.length > 0 && (

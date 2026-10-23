@@ -27,6 +27,49 @@ export function stdDev(values: number[], n: number): number | null {
   return Math.sqrt(s / n);
 }
 
+
+export function smaAt(values: number[], endIndex: number, n: number): number | null {
+  if (n <= 0 || endIndex < n) return null;
+  let sum = 0;
+  for (let j = endIndex - n; j < endIndex; j++) sum += values[j];
+  return sum / n;
+}
+
+export function stdDevAt(values: number[], endIndex: number, n: number): number | null {
+  const m = smaAt(values, endIndex, n);
+  if (m === null) return null;
+  let s = 0;
+  for (let j = endIndex - n; j < endIndex; j++) s += (values[j] - m) ** 2;
+  return Math.sqrt(s / n);
+}
+
+export function maxLast(values: number[], endIndex: number, n: number): number | null {
+  if (n <= 0 || endIndex < n) return null;
+  let m = -Infinity;
+  for (let j = endIndex - n; j < endIndex; j++) if (values[j] > m) m = values[j];
+  return m;
+}
+
+export function minLast(values: number[], endIndex: number, n: number): number | null {
+  if (n <= 0 || endIndex < n) return null;
+  let m = Infinity;
+  for (let j = endIndex - n; j < endIndex; j++) if (values[j] < m) m = values[j];
+  return m;
+}
+
+export function avgAbsDiffAt(values: number[], endIndex: number, n: number): number | null {
+  if (n <= 0 || endIndex < n + 1) return null;
+  let sum = 0;
+  let count = 0;
+  for (let j = endIndex - n; j < endIndex; j++) {
+    if (j <= 0) continue;
+    sum += Math.abs(values[j] - values[j - 1]);
+    count++;
+  }
+  if (count === 0) return null;
+  return sum / count;
+}
+
 export function maxOf(values: number[], n: number): number | null {
   if (n <= 0 || values.length < n) return null;
   let m = -Infinity;
@@ -151,7 +194,7 @@ export function runBacktest(
       const lastClose = closes[i - 1];
       const prevClose = closes[i - 1 - lb];
       const ret = prevClose !== 0 ? lastClose / prevClose - 1 : 0;
-      const tr = sma(closes.slice(0, i), tw);
+      const tr = smaAt(closes, i, tw);
       const trendOk = tr !== null && lastClose > tr;
       const enter = ret > thr && trendOk;
       if (currentPos === 0) return enter ? 1 : 0;
@@ -163,8 +206,8 @@ export function runBacktest(
       const entryZ = Number(p.entryZ);
       const exitZ = Number(p.exitZ);
       if (i - 1 < w) return currentPos;
-      const m = sma(closes.slice(0, i), w);
-      const sd = stdDev(closes.slice(0, i), w);
+      const m = smaAt(closes, i, w);
+      const sd = stdDevAt(closes, i, w);
       if (m === null || sd === null || sd === 0) return currentPos;
       const z = (closes[i - 1] - m) / sd;
       if (currentPos === 0) return z < -entryZ ? 1 : 0;
@@ -175,10 +218,10 @@ export function runBacktest(
     const volWindow = Number(p.volWindow);
     if (i - 1 < Math.max(lb, volWindow)) return currentPos;
     const lastClose = closes[i - 1];
-    const maxHigh = maxOf(highs.slice(0, i - 1), lb);
-    const minLow = minOf(lows.slice(0, i - 1), lb);
-    const vol = stdDev(closes.slice(0, i), volWindow);
-    const avgVol = sma(closes.slice(0, i).map((_, idx, arr) => idx > 0 ? Math.abs(arr[idx] - arr[idx - 1]) : 0), volWindow);
+    const maxHigh = maxLast(highs, i - 1, lb);
+    const minLow = minLast(lows, i - 1, lb);
+    const vol = stdDevAt(closes, i, volWindow);
+    const avgVol = avgAbsDiffAt(closes, i, volWindow);
     const volOk = vol !== null && avgVol !== null && vol > 0; // basic filter
     if (currentPos === 0) {
       const breakout = maxHigh !== null && lastClose > maxHigh;
