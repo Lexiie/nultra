@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseExchangeInfo, parseFeeTiers, parseMarket, parseKlines } from "@nultra/strike-client";
 
-const base = resolve(__dirname, "../nultra-mvp-prd/evidence/strike-mainnet");
+const base = resolve(__dirname, "../tests/fixtures/strike-mainnet");
 
 describe("Strike client contract", () => {
   it("parses markets BTC-USD", () => {

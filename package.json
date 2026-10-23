@@ -2,7 +2,7 @@
   "name": "nultra",
   "version": "0.1.0",
   "private": true,
-  "description": "Nultra — Profit Intelligence Engine (PRD v3.0 MVP)",
+  "description": "Nultra \u2014 Profit Intelligence Engine (PRD v3.0 MVP)",
   "type": "module",
   "workspaces": [
     "packages/*",
@@ -13,8 +13,7 @@
     "typecheck": "pnpm -r run typecheck",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "extract:evidence": "mkdir -p nultra-mvp-prd/evidence && unzip -o nultra-mvp-prd/evidence/strike-mainnet.zip -d nultra-mvp-prd/evidence"
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

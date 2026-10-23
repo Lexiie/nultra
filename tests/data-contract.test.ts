@@ -7,7 +7,7 @@ import { parseKlines } from "@nultra/strike-client";
 describe("Strike kline contract", () => {
   it("parses real mainnet 1h fixture", async () => {
     // fallback: read from extracted evidence dir
-    const p = resolve(__dirname, "../nultra-mvp-prd/evidence/strike-mainnet/klines_1h.json");
+    const p = resolve(__dirname, "../tests/fixtures/strike-mainnet/klines_1h.json");
     const raw = JSON.parse(readFileSync(p, "utf-8")) as unknown[];
     const bars = parseKlines(raw);
     expect(bars.length).toBe(100);
