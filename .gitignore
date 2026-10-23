@@ -1,0 +1,10 @@
+node_modules
+.pnpm-store
+dist
+.wrangler
+*.log
+.env
+.dev.vars
+
+apps/web/*.js
+apps/web/*.d.ts

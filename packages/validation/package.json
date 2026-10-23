@@ -1,0 +1,15 @@
+{
+  "name": "@nultra/validation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@nultra/shared-types": "workspace:*",
+    "@nultra/quant-core": "workspace:*"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  }
+}

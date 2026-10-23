@@ -1,0 +1,177 @@
+import { useState } from "react";
+import { ingestHistoricalKlines } from "@nultra/data-core";
+import { validateOpportunities } from "@nultra/validation";
+import type { TradingOpportunity } from "@nultra/shared-types";
+import type { CostAssumptions } from "@nultra/shared-types";
+
+const defaultCosts: CostAssumptions = {
+  feeBpsPerSide: 10,
+  halfSpreadBpsPerSide: 5,
+  slippageBpsPerSide: 5,
+  fundingIncluded: false,
+  source: "DEFAULT_ESTIMATE",
+  label: "FUNDING_EXCLUDED",
+};
+
+export default function App() {
+  const [env, setEnv] = useState<"mainnet" | "testnet">("mainnet");
+  const [symbol, setSymbol] = useState("BTC-USD");
+  const [interval, setInterval] = useState("1h");
+  const [days, setDays] = useState(14);
+  const [status, setStatus] = useState<string>("");
+  const [busy, setBusy] = useState(false);
+  const [opps, setOpps] = useState<TradingOpportunity[]>([]);
+  const [selected, setSelected] = useState<TradingOpportunity | null>(null);
+  const [noRobustEdge, setNoRobustEdge] = useState(false);
+  const [attempted, setAttempted] = useState(0);
+
+  async function discover() {
+    setBusy(true);
+    setOpps([]);
+    setSelected(null);
+    setNoRobustEdge(false);
+    try {
+      setStatus("Fetching historical candles...");
+      const end = Date.now();
+      const start = end - days * 24 * 3600 * 1000;
+      const ingested = await ingestHistoricalKlines({
+        env,
+        symbol,
+        interval,
+        startMs: start,
+        endMs: end,
+      });
+      setStatus(`Ingested ${ingested.candles.length} candles (${ingested.pages} pages, ${ingested.gapCount} gaps). Running validation...`);
+      const res = validateOpportunities({
+        candles: ingested.candles,
+        costs: defaultCosts,
+        seed: 42,
+      });
+      setOpps(res.opportunities);
+      setNoRobustEdge(res.noRobustEdge);
+      setAttempted(res.attempted);
+      setStatus(`Done. ${res.opportunities.filter((o) => o.verdict === "CANDIDATE — HISTORICAL ONLY").length} qualified of ${res.attempted}.`);
+    } catch (e) {
+      setStatus(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function exportJson() {
+    const blob = new Blob([JSON.stringify(opps, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "nultra-experiment.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const qualified = opps.filter((o) => o.verdict === "CANDIDATE — HISTORICAL ONLY");
+
+  return (
+    <div className="min-h-screen p-6">
+      <header className="mb-6">
+        <h1 className="text-2xl font-bold">Nultra — Profit Intelligence Engine</h1>
+        <p className="text-slate-400 text-sm">Discover the edge. Capture the opportunity. Historical research only — no live trading, no guaranteed profits.</p>
+      </header>
+
+      <section className="bg-slate-900 rounded-xl p-4 mb-6 border border-slate-800">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <label className="text-sm">Environment
+            <select className="w-full mt-1 bg-slate-800 rounded p-2" value={env} onChange={(e) => setEnv(e.target.value as "mainnet" | "testnet")}>
+              <option value="mainnet">mainnet</option>
+              <option value="testnet">testnet</option>
+            </select>
+          </label>
+          <label className="text-sm">Symbol
+            <input className="w-full mt-1 bg-slate-800 rounded p-2" value={symbol} onChange={(e) => setSymbol(e.target.value)} />
+          </label>
+          <label className="text-sm">Interval
+            <select className="w-full mt-1 bg-slate-800 rounded p-2" value={interval} onChange={(e) => setInterval(e.target.value)}>
+              {["1m", "5m", "15m", "1h", "4h", "1d"].map((iv) => <option key={iv} value={iv}>{iv}</option>)}
+            </select>
+          </label>
+          <label className="text-sm">Days back
+            <input type="number" className="w-full mt-1 bg-slate-800 rounded p-2" value={days} onChange={(e) => setDays(Number(e.target.value))} />
+          </label>
+          <div className="flex items-end">
+            <button onClick={discover} disabled={busy} className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded p-2 font-medium">
+              {busy ? "Running..." : "Discover Opportunities"}
+            </button>
+          </div>
+        </div>
+        <p className="text-xs text-slate-500 mt-3">Costs: 10 bps fee + 5 bps half-spread + 5 bps slippage per side (estimated, unverified). Funding EXCLUDED for perpetuals.</p>
+        {status && <p className="text-sm mt-3 text-slate-300">{status}</p>}
+      </section>
+
+      {opps.length > 0 && (
+        <section className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">Discovery Funnel</h2>
+            <button onClick={exportJson} className="text-sm bg-slate-800 rounded px-3 py-1">Export JSON</button>
+          </div>
+          <div className="grid grid-cols-4 gap-3 mb-4">
+            <div className="bg-slate-900 rounded p-3 border border-slate-800"><div className="text-2xl font-bold">{attempted}</div><div className="text-xs text-slate-400">candidates generated</div></div>
+            <div className="bg-slate-900 rounded p-3 border border-slate-800"><div className="text-2xl font-bold">{opps.filter((o) => o.trainMetrics.tradeCount > 0).length}</div><div className="text-xs text-slate-400">with trades</div></div>
+            <div className="bg-slate-900 rounded p-3 border border-slate-800"><div className="text-2xl font-bold">{qualified.length}</div><div className="text-xs text-slate-400">qualified</div></div>
+            <div className="bg-slate-900 rounded p-3 border border-slate-800"><div className="text-2xl font-bold">{opps.filter((o) => o.verdict === "REJECTED").length}</div><div className="text-xs text-slate-400">rejected</div></div>
+          </div>
+          {noRobustEdge && <div className="bg-amber-900/40 border border-amber-700 rounded p-3 text-amber-200 text-sm">NO ROBUST EDGE — no candidate passed all gates.</div>}
+          {opps.some((o) => o.verdict === "INSUFFICIENT DATA") && <div className="bg-slate-800 border border-slate-700 rounded p-3 text-slate-300 text-sm">Some candidates: INSUFFICIENT DATA.</div>}
+        </section>
+      )}
+
+      {opps.length > 0 && (
+        <section className="grid md:grid-cols-2 gap-6">
+          <div>
+            <h2 className="text-lg font-semibold mb-3">Opportunity Explorer</h2>
+            <div className="space-y-2 max-h-[60vh] overflow-auto">
+              {opps.map((o) => (
+                <button key={o.opportunityId} onClick={() => setSelected(o)}
+                  className={`w-full text-left bg-slate-900 rounded p-3 border ${selected?.opportunityId === o.opportunityId ? "border-indigo-500" : "border-slate-800"} hover:border-slate-600`}>
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium text-sm">{o.hypothesisFamily}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded ${o.verdict === "CANDIDATE — HISTORICAL ONLY" ? "bg-emerald-900 text-emerald-200" : o.verdict === "REJECTED" ? "bg-rose-900 text-rose-200" : "bg-slate-700 text-slate-200"}`}>{o.verdict}</span>
+                  </div>
+                  <div className="text-xs text-slate-400 mt-1">val expectancy: {o.validationMetrics.expectancy} · maxDD: {o.validationMetrics.maxDrawdown} · trades: {o.validationMetrics.completedTrades}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold mb-3">Opportunity Inspector</h2>
+            {selected ? (
+              <div className="bg-slate-900 rounded p-4 border border-slate-800 space-y-3 text-sm">
+                <div><span className="text-slate-400">ID:</span> {selected.opportunityId}</div>
+                <div><span className="text-slate-400">Hypothesis:</span> {selected.hypothesisExplanation}</div>
+                <div><span className="text-slate-400">Rules:</span> {selected.strategyRules}</div>
+                <div><span className="text-slate-400">Params:</span> {JSON.stringify(selected.parameterSet)}</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-slate-800 rounded p-2"><div className="text-xs text-slate-400">Train net return</div><div>{selected.trainMetrics.netReturn}</div></div>
+                  <div className="bg-slate-800 rounded p-2"><div className="text-xs text-slate-400">Validation net return</div><div>{selected.validationMetrics.netReturn}</div></div>
+                  <div className="bg-slate-800 rounded p-2"><div className="text-xs text-slate-400">Holdout net return</div><div>{selected.holdoutMetrics?.netReturn}</div></div>
+                  <div className="bg-slate-800 rounded p-2"><div className="text-xs text-slate-400">Max drawdown (val)</div><div>{selected.validationMetrics.maxDrawdown}</div></div>
+                </div>
+                <div><span className="text-slate-400">Costs:</span> {selected.executionAssumptions.feeBpsPerSide}bps fee, {selected.executionAssumptions.halfSpreadBpsPerSide}bps half-spread, {selected.executionAssumptions.slippageBpsPerSide}bps slippage. {selected.executionAssumptions.label}.</div>
+                <div><span className="text-slate-400">Trades (val):</span> {selected.validationMetrics.completedTrades} completed. Unrealized: {selected.validationMetrics.unrealizedPnl}.</div>
+                {selected.rejectionReasons.length > 0 && <div className="text-rose-300 text-xs">Rejections: {selected.rejectionReasons.join("; ")}</div>}
+                <details className="text-xs">
+                  <summary className="cursor-pointer text-slate-400">Trade ledger (validation not shown; train first 5)</summary>
+                  <pre className="whitespace-pre-wrap break-all mt-2">{JSON.stringify(selected.trainMetrics.trades.slice(0, 5), null, 2)}</pre>
+                </details>
+              </div>
+            ) : (
+              <div className="text-slate-500 text-sm">Select an opportunity to inspect.</div>
+            )}
+          </div>
+        </section>
+      )}
+
+      <footer className="mt-8 text-xs text-slate-600">
+        Nultra v3.0 MVP · Historical research candidate, not live alpha · Estimated costs · Funding excluded.
+      </footer>
+    </div>
+  );
+}
