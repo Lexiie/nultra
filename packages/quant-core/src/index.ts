@@ -215,19 +215,21 @@ export function runBacktest(
     }
     // volatility breakout
     const lb = Number(p.lookback);
+    const atrMult = Number(p.atrMult);
     const volWindow = Number(p.volWindow);
     if (i - 1 < Math.max(lb, volWindow)) return currentPos;
     const lastClose = closes[i - 1];
     const maxHigh = maxLast(highs, i - 1, lb);
     const minLow = minLast(lows, i - 1, lb);
     const vol = stdDevAt(closes, i, volWindow);
-    const avgVol = avgAbsDiffAt(closes, i, volWindow);
-    const volOk = vol !== null && avgVol !== null && vol > 0; // basic filter
+    const volOk = vol !== null && vol > 0;
     if (currentPos === 0) {
-      const breakout = maxHigh !== null && lastClose > maxHigh;
+      // atrMult scales the breakout threshold: higher values require a larger move
+      const threshold = maxHigh !== null && vol !== null ? maxHigh + (atrMult - 1) * vol : null;
+      const breakout = threshold !== null && lastClose > threshold;
       return breakout && volOk ? 1 : 0;
     }
-    // exit on breakdown below minLow or volatility collapse
+    // exit on breakdown below minLow
     const breakdown = minLow !== null && lastClose < minLow;
     return breakdown ? 0 : 1;
   }

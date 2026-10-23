@@ -87,4 +87,18 @@ describe("quant core", () => {
     expect(o.validationMetrics).toBeTruthy();
     expect(o.verdict).toBe("CANDIDATE — HISTORICAL ONLY");
   });
+
+  it("atrMult affects volatility breakout results", () => {
+    const prices = Array.from({ length: 80 }, (_, i) => 100 + Math.sin(i / 4) * 6 + i * 0.3);
+    const candles = makeCandles(prices);
+    const results = [1.0, 1.5, 2.0].map((m) =>
+      runBacktest(candles, { family: "volatility_breakout" as const, params: { lookback: 5, atrMult: m, volWindow: 10 }, gridVersion: "t" }, costs, market)
+    );
+    const counts = results.map((r) => r.tradeCount);
+    const returns = results.map((r) => r.netReturn);
+    // at least two distinct trade counts or net returns
+    const distinct = new Set(counts.map((c, i) => `${c}|${returns[i]}`)).size;
+    expect(distinct).toBeGreaterThan(1);
+  });
+
 });
