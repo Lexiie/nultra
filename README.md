@@ -23,4 +23,4 @@ PRD v3.0 implementation workspace. See `nultra-mvp-prd/` for the full PRD and `d
 - M2 complete: 3 hypothesis families, bounded grids, chronological backtest engine, metrics, opportunity discovery.
 - M3 complete: 60/20/20 splits, walk-forward, cost stress, neighbor stability, verdict gates, validation ranking, baselines.
 - M4 complete: Vite+React+Tailwind UI (discovery funnel, explorer, inspector, export) — production build passes.
-- M5 pending manual deploy (Cloudflare credentials not available in this environment).
+- M5 complete: deployed at https://nultra.pages.dev (latest https://c896053a.nultra.pages.dev).
